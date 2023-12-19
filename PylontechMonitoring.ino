@@ -5,6 +5,7 @@
 #include <circular_log.h>
 #include <ArduinoJson.h>
 #include <NTPClient.h>
+#include <ESP8266TimerInterrupt.h>
 
 //+++ START CONFIGURATION +++
 
@@ -32,6 +33,18 @@
 #define MQTT_PASSWORD      "*** your MQTT password ***"
 #define MQTT_TOPIC_ROOT    "pylontech/sensor/grid_battery/"  //this is where mqtt data will be pushed
 #define MQTT_PUSH_FREQ_SEC 2  //maximum mqtt update frequency in seconds
+
+
+// Set your Static IP address
+IPAddress local_IP(*** your IP ***);
+// Set your Gateway IP address
+IPAddress gateway(*** your router ip ***);
+IPAddress subnet(255, 255, 255, 0);
+IPAddress primaryDNS(*** your router ip ***);   //optional
+
+//set http Authentication
+const char* www_username = "admin";
+const char* www_password = "password";
 
 //+++   END CONFIGURATION +++
 
@@ -61,7 +74,18 @@ void Log(const char* msg)
   g_log.Log(msg);
 }
 
+//Define Interrupt Timer to Calculate Power meter every second (kWh)
+#define USING_TIM_DIV1 true                                             // for shortest and most accurate timer
+ESP8266Timer ITimer;
+bool setInterval(unsigned long interval, timer_callback callback);      // interval (in microseconds)
+#define TIMER_INTERVAL_MS 1000
 
+//Global Variables for the Power Meter - accessible from the calculating interrupt und from main
+unsigned long powerIN = 0;       //WS gone in to the BAttery
+unsigned long powerOUT = 0;      //WS gone out of the Battery
+//Global Variables for the Power Meter - Überlauf
+unsigned long powerINWh = 0;       //WS gone in to the BAttery
+unsigned long powerOUTWh = 0;      //WS gone out of the Battery
 void setup() {
   
   memset(g_szRecvBuff, 0, sizeof(g_szRecvBuff)); //clean variable
@@ -73,12 +97,15 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.persistent(false); //our credentialss are hardcoded, so we don't need ESP saving those each boot (will save on flash wear)
   WiFi.hostname(WIFI_HOSTNAME);
+  WiFi.config(local_IP, gateway, subnet, primaryDNS);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   for(int ix=0; ix<10; ix++)
   {
+    Log("Wait for WIFI Connection");
     if(WiFi.status() == WL_CONNECTED)
     {
+      Log("Wifi Connected.");
       break;
     }
 
@@ -92,6 +119,9 @@ void setup() {
   server.on("/req", handleReq);
   server.on("/jsonOut", handleJsonOut);
   server.on("/reboot", [](){
+    if (!server.authenticate(www_username, www_password)) {
+      return server.requestAuthentication();
+    }
     ESP.restart();
   });
   
@@ -105,10 +135,17 @@ void setup() {
 #endif
 
   Log("Boot event");
+
+  //Setup timer for interrupt energy meter counter
+  ITimer.attachInterruptInterval(TIMER_INTERVAL_MS * 1000, EnergyMeterTimerHandler);
+  
 }
 
 void handleLog()
 {
+  if (!server.authenticate(www_username, www_password)) {
+    return server.requestAuthentication();
+  }
   server.send(200, "text/html", g_log.c_str());
 }
 
@@ -240,6 +277,9 @@ bool sendCommandAndReadSerialResponse(const char* pszCommand)
 
 void handleReq()
 {
+  if (!server.authenticate(www_username, www_password)) {
+    return server.requestAuthentication();
+  }
   bool respOK;
   if(server.hasArg("code") == false)
   {
@@ -257,6 +297,9 @@ void handleReq()
 
 void handleJsonOut()
 {
+  if (!server.authenticate(www_username, www_password)) {
+    return server.requestAuthentication();
+  }
   if(sendCommandAndReadSerialResponse("pwr") == false)
   {
     server.send(500, "text/plain", "Failed to get response to 'pwr' command");
@@ -269,7 +312,9 @@ void handleJsonOut()
 }
 
 void handleRoot() {
-
+  if (!server.authenticate(www_username, www_password)) {
+    return server.requestAuthentication();
+  }
   timeClient.update(); //get ntp datetime
   unsigned long days = 0, hours = 0, minutes = 0;
   unsigned long val = os_getCurrentTimeSec();
@@ -294,8 +339,8 @@ void handleRoot() {
             ESP.getFreeHeap(), WiFi.RSSI(), WiFi.SSID().c_str());
 
   strncat(szTmp, "<BR><a href='/log'>Runtime log</a><HR>", sizeof(szTmp)-1);
-  strncat(szTmp, "<form action='/req' method='get'>Command:<input type='text' name='code'/><input type='submit'> <a href='/req?code=pwr'>PWR</a> | <a href='/req?code=pwr%201'>Power 1</a> |  <a href='/req?code=pwr%202'>Power 2</a> | <a href='/req?code=pwr%203'>Power 3</a> | <a href='/req?code=pwr%204'>Power 4</a> | <a href='/req?code=help'>Help</a> | <a href='/req?code=log'>Event Log</a> | <a href='/req?code=time'>Time</a><br>", sizeof(szTmp)-1);
-  strncat(szTmp, "<textarea rows='45' cols='180'>", sizeof(szTmp)-1);
+  strncat(szTmp, "<form action='/req' method='get'>Command:<input type='text' name='code'/><input type='submit'><a href='/req?code=pwr'>Power</a> | <a href='/req?code=help'>Help</a> | <a href='/req?code=log'>Event Log</a> | <a href='/req?code=time'>Time</a><br>", sizeof(szTmp)-1);
+  strncat(szTmp, "<textarea rows='80' cols='180'>", sizeof(szTmp)-1);
   strncat(szTmp, g_szRecvBuff, sizeof(szTmp)-1);
   strncat(szTmp, "</textarea></form>", sizeof(szTmp)-1);
   strncat(szTmp, "</html>", sizeof(szTmp)-1);
@@ -403,7 +448,6 @@ struct batteryStack
   long currentDC;    //mAh current going in or out of the battery
   long avgVoltage;    //in mV
   char baseState[9];  //Charge | Dischg | Idle | Balance | Alarm!
-
   
   pylonBattery batts[MAX_PYLON_BATTERIES];
 
@@ -427,26 +471,20 @@ struct batteryStack
     return (long)(((double)currentDC/1000.0)*((double)avgVoltage/1000.0));
   }
 
-  // power in Wh in charge
-  float powerIN() const
+
+  // power in kWh in charge
+  float getpowerIN() const
   {
-    if (currentDC > 0) {
-       return (float)(((double)currentDC/1000.0)*((double)avgVoltage/1000.0));
-    } else {
-       return (float)(0);
-    }
+    return ((float)powerIN/3600000) + ((float)powerINWh/3600);
   }
   
-  // power in Wh in discharge
-  float powerOUT() const
+  // power in kWh in discharge
+  float getpowerOUT() const
   {
-    if (currentDC < 0) {
-       return (float)(((double)currentDC/1000.0)*((double)avgVoltage/1000.0)*-1);
-    } else {
-       return (float)(0);
-    }
+    return ((float)powerOUT/3600000) + ((float)powerOUTWh/3600);
   }
 
+/*
   //Wh estimated current on AC side (taking into account Sofar ME3000SP losses)
   long getEstPowerAc() const
   {
@@ -488,6 +526,7 @@ struct batteryStack
       }
     }
   }
+  */
 };
 
 batteryStack g_stack;
@@ -671,9 +710,47 @@ void prepareJsonOutput(char* pBuff, int buffSize)
                                                                                                                                                                                                             g_stack.baseState, 
                                                                                                                                                                                                             g_stack.batteryCount, 
                                                                                                                                                                                                             g_stack.getPowerDC(), 
-                                                                                                                                                                                                            g_stack.getEstPowerAc(),
+                                                                                                                                                                                                            /*g_stack.getEstPowerAc(),*/
                                                                                                                                                                                                             g_stack.isNormal() ? "true" : "false");
 }
+
+
+
+//Define ISR to calculate WattSeconds gone in and out of the Battery
+void EnergyMeterTimerHandler()
+{
+//  onlineTime += 1;
+
+  if(powerOUT > 4000000000)
+  {
+    powerOUTWh = powerOUT/3600;
+    powerOUT = 0;
+    Log("Copy powerOUT to Wh and reset Ws counter");
+  }
+  if(powerIN > 4000000000)
+  {
+    powerINWh = powerIN/3600;
+    powerIN = 0;
+    Log("Copy powerIN to Wh and reset Ws counter");
+  }
+  
+  long power = g_stack.getPowerDC();
+  if(power == 0)
+  {
+    return;
+  }
+  else if(power < 0)
+  {
+    powerOUT += abs(power);
+  }
+  else
+  {
+    powerIN += power;
+  } 
+}
+
+
+
 
 void loop() {
 #ifdef ENABLE_MQTT
@@ -739,15 +816,15 @@ void mqtt_publish_s(const char* topic, const char* newValue, const char* oldValu
 void pushBatteryDataToMqtt(const batteryStack& lastSentData, bool forceUpdate /* if true - we will send all data regardless if it's the same */)
 {
   mqtt_publish_f(MQTT_TOPIC_ROOT "soc",          g_stack.soc,                lastSentData.soc,                0, forceUpdate);
-  mqtt_publish_f(MQTT_TOPIC_ROOT "temp",         (float)g_stack.temp/1000.0, (float)lastSentData.temp/1000.0, 0.1, forceUpdate);
+  mqtt_publish_f(MQTT_TOPIC_ROOT "temp",         (float)g_stack.temp/1000.0, (float)lastSentData.temp/1000.0, 0, forceUpdate);
   mqtt_publish_i(MQTT_TOPIC_ROOT "currentDC",    g_stack.currentDC,          lastSentData.currentDC,          1, forceUpdate);
-  mqtt_publish_i(MQTT_TOPIC_ROOT "estPowerAC",   g_stack.getEstPowerAc(),    lastSentData.getEstPowerAc(),   10, forceUpdate);
+ // mqtt_publish_i(MQTT_TOPIC_ROOT "estPowerAC",   g_stack.getEstPowerAc(),    lastSentData.getEstPowerAc(),   10, forceUpdate);
   mqtt_publish_i(MQTT_TOPIC_ROOT "battery_count",g_stack.batteryCount,       lastSentData.batteryCount,       0, forceUpdate);
   mqtt_publish_s(MQTT_TOPIC_ROOT "base_state",   g_stack.baseState,          lastSentData.baseState            , forceUpdate);
   mqtt_publish_i(MQTT_TOPIC_ROOT "is_normal",    g_stack.isNormal() ? 1:0,   lastSentData.isNormal() ? 1:0,   0, forceUpdate);
   mqtt_publish_i(MQTT_TOPIC_ROOT "getPowerDC",   g_stack.getPowerDC(),       lastSentData.getPowerDC(),       1, forceUpdate);
-  mqtt_publish_i(MQTT_TOPIC_ROOT "powerIN",      g_stack.powerIN(),          lastSentData.powerIN(),          1, forceUpdate);
-  mqtt_publish_i(MQTT_TOPIC_ROOT "powerOUT",     g_stack.powerOUT(),         lastSentData.powerOUT(),         1, forceUpdate);
+  mqtt_publish_f(MQTT_TOPIC_ROOT "powerIN",      g_stack.getpowerIN(),          lastSentData.getpowerIN(),          1, forceUpdate);
+  mqtt_publish_f(MQTT_TOPIC_ROOT "powerOUT",     g_stack.getpowerOUT(),         lastSentData.getpowerOUT(),         1, forceUpdate);
 
   // publishing details
   for (int ix = 0; ix < g_stack.batteryCount; ix++) {
