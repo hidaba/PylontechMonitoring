@@ -61,15 +61,15 @@ mqtt:
 
   sensor:
     - name: "Livello Carica Batteria"
-      state_topic: "homeassistant/sensor/grid_battery/soc"
+      state_topic: "pylontech/sensor/grid_battery/soc"
       unit_of_measurement: "%"
       device_class: battery
       
     - name: "Stato Batteria"
-      state_topic: "homeassistant/sensor/grid_battery/base_state"
+      state_topic: "pylontech/sensor/grid_battery/base_state"
       
     - name: "Temperatura Batteria"
-      state_topic: "homeassistant/sensor/grid_battery/temp"
+      state_topic: "pylontech/sensor/grid_battery/temp"
       unit_of_measurement: "°C"
       device_class: temperature
       
@@ -77,12 +77,12 @@ mqtt:
       state_topic: "homeassistant/sensor/grid_battery/battery_count"
       
     - name: "Potenza impegnata Batterie"
-      state_topic: "homeassistant/sensor/grid_battery/getPowerDC"
+      state_topic: "pylontech/sensor/grid_battery/getPowerDC"
       unit_of_measurement: "Wh"
       device_class: energy
       
     - name: "Potenza carica Batterie"
-      state_topic: "homeassistant/sensor/grid_battery/powerIN"
+      state_topic: "pylontech/sensor/grid_battery/powerIN"
       unit_of_measurement: "Wh"
       state_class: "total_increasing"
       device_class: "energy"
@@ -90,7 +90,7 @@ mqtt:
 
       
     - name: "Potenza scarica Batterie"
-      state_topic: "homeassistant/sensor/grid_battery/powerOUT"
+      state_topic: "pylontech/sensor/grid_battery/powerOUT"
       unit_of_measurement: "Wh"
       state_class: "total_increasing"
       device_class: "energy"
