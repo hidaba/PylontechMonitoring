@@ -1,7 +1,7 @@
 # Pylontech Battery Monitoring via WiFi
 Forked from irekzielinski/Pylontech-Battery-Monitoring
 
-This project allows you to control and monitor Pylontech US2000B, US2000C, US3000C and US5000 batteries via console port over WiFi.
+This project allows you to control and monitor Pylontech US2000B, US2000C, US3000C, US5000, UP2500 batteries via console port over WiFi.
 It it's a great starting point to integrate battery with your home automation.
 
 **I ACCEPT NO RESPONSIBILTY FOR ANY DAMAGE CAUSED, PROCEED AT YOUR OWN RISK**
