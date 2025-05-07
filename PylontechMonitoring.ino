@@ -445,17 +445,6 @@ void extractStr(const char* pStr, int pos, char* strOut, int strOutSize)
 }
 
 
-bool parsePwrResponse(const char* pStrOutput)
-{
- if  (FW_VERSION == 1 )
-  {
-    return parse1(pStrOutput);
-  }
-  else
-  {
-    return parse1(pStrOutput);
-  } 
-}
 
 /**
  * parsePwrResponse
@@ -466,7 +455,155 @@ bool parsePwrResponse(const char* pStrOutput)
  * 
  * Further down, these will be used to calculate approximate power in W or kW.
  */
-bool parse1(const char* pStr)
+bool parsePwrResponse(const char* pStr)
+{
+  if(strstr(pStr, "Command completed successfully") == NULL)
+  {
+    return false;
+  }
+
+  int chargeCnt    = 0;
+  int dischargeCnt = 0;
+  int idleCnt      = 0;
+  int alarmCnt     = 0;
+  int socAvg       = 0;
+  int socLow       = 0;
+  int tempHigh     = 0;
+  int tempLow      = 0;
+
+  // Reset the entire g_stack each time we parse
+  memset(&g_stack, 0, sizeof(g_stack));
+
+  for(int ix=0; ix<MAX_PYLON_BATTERIES; ix++)
+  {
+    char szToFind[32];
+    snprintf(szToFind, sizeof(szToFind), "\r\r\n%d     ", ix+1);
+
+    const char* pLineStart = strstr(pStr, szToFind);
+    if(pLineStart == NULL)
+    {
+      return false;
+    }
+
+    pLineStart += 3; // skip \r\r\n
+
+    extractStr(pLineStart, 55, g_stack.batts[ix].baseState,    sizeof(g_stack.batts[ix].baseState));
+    if(strcmp(g_stack.batts[ix].baseState, "Absent") == 0)
+    {
+      g_stack.batts[ix].isPresent = false;
+    }
+    else
+    {
+      g_stack.batts[ix].isPresent = true;
+
+      if  (FW_VERSION == 1 )
+      {
+        extractStr(pLineStart, 64, g_stack.batts[ix].voltageState, sizeof(g_stack.batts[ix].voltageState));
+        extractStr(pLineStart, 73, g_stack.batts[ix].currentState, sizeof(g_stack.batts[ix].currentState));
+        extractStr(pLineStart, 82, g_stack.batts[ix].tempState,    sizeof(g_stack.batts[ix].tempState));
+        extractStr(pLineStart, 100, g_stack.batts[ix].time,        sizeof(g_stack.batts[ix].time));
+        extractStr(pLineStart, 121, g_stack.batts[ix].b_v_st,      sizeof(g_stack.batts[ix].b_v_st));
+        extractStr(pLineStart, 130, g_stack.batts[ix].b_t_st,      sizeof(g_stack.batts[ix].b_t_st));
+
+        // Each battery's voltage is in mW, current in mA, temperature in milli-deg C.
+        g_stack.batts[ix].voltage = extractInt(pLineStart, 6);
+        g_stack.batts[ix].current = extractInt(pLineStart, 13);
+        g_stack.batts[ix].tempr   = extractInt(pLineStart, 20);
+        g_stack.batts[ix].cellTempLow    = extractInt(pLineStart, 27);
+        g_stack.batts[ix].cellTempHigh   = extractInt(pLineStart, 34);
+        g_stack.batts[ix].cellVoltLow    = extractInt(pLineStart, 41);
+        g_stack.batts[ix].cellVoltHigh   = extractInt(pLineStart, 48);
+        g_stack.batts[ix].soc            = extractInt(pLineStart, 91);
+      }
+      else
+      {
+        extractStr(pLineStart, 100, g_stack.batts[ix].voltageState, sizeof(g_stack.batts[ix].voltageState));
+        extractStr(pLineStart, 109, g_stack.batts[ix].currentState, sizeof(g_stack.batts[ix].currentState));
+        extractStr(pLineStart, 118, g_stack.batts[ix].tempState,    sizeof(g_stack.batts[ix].tempState));
+        extractStr(pLineStart, 136, g_stack.batts[ix].time,        sizeof(g_stack.batts[ix].time));
+        extractStr(pLineStart, 157, g_stack.batts[ix].b_v_st,      sizeof(g_stack.batts[ix].b_v_st));
+        extractStr(pLineStart, 166, g_stack.batts[ix].b_t_st,      sizeof(g_stack.batts[ix].b_t_st));
+
+        // Each battery's voltage is in mW, current in mA, temperature in milli-deg C.
+        g_stack.batts[ix].voltage = extractInt(pLineStart, 6);
+        g_stack.batts[ix].current = extractInt(pLineStart, 13);
+        g_stack.batts[ix].tempr   = extractInt(pLineStart, 20);
+        g_stack.batts[ix].cellTempLow    = extractInt(pLineStart, 27);
+        g_stack.batts[ix].cellTempHigh   = extractInt(pLineStart, 43);
+        g_stack.batts[ix].cellVoltLow    = extractInt(pLineStart, 59);
+        g_stack.batts[ix].cellVoltHigh   = extractInt(pLineStart, 75);
+        g_stack.batts[ix].soc            = extractInt(pLineStart, 127);
+      } 
+
+ 
+      // Summation for entire stack
+      g_stack.batteryCount++;
+      g_stack.currentDC += g_stack.batts[ix].current;   // total mA
+      g_stack.avgVoltage += g_stack.batts[ix].voltage;  // total mV
+      socAvg += g_stack.batts[ix].soc;
+
+      // Determine overall state (alarm, charge, discharge, etc.)
+      if(!g_stack.batts[ix].isNormal()){ alarmCnt++; }
+      else if(g_stack.batts[ix].isCharging())   { chargeCnt++; }
+      else if(g_stack.batts[ix].isDischarging()){ dischargeCnt++; }
+      else if(g_stack.batts[ix].isIdle())       { idleCnt++; }
+      else { alarmCnt++; }
+
+      // For the first battery, store initial lowest/highest values
+      if(g_stack.batteryCount == 1)
+      {
+        socLow = g_stack.batts[ix].soc;
+        tempLow  = g_stack.batts[ix].cellTempLow;
+        tempHigh = g_stack.batts[ix].cellTempHigh;
+      }
+      else
+      {
+        if(socLow > g_stack.batts[ix].soc)             socLow = g_stack.batts[ix].soc;
+        if(tempHigh < g_stack.batts[ix].cellTempHigh)  tempHigh = g_stack.batts[ix].cellTempHigh;
+        if(tempLow > g_stack.batts[ix].cellTempLow)    tempLow = g_stack.batts[ix].cellTempLow;
+      }
+    }
+  }
+
+  // Compute average voltage by dividing the total by batteryCount (still in mV)
+  g_stack.avgVoltage /= g_stack.batteryCount;
+
+  // Overall stack SoC, if all are charging then it uses average, else lowest
+  g_stack.soc = socLow;
+
+  // Decide how to pick the main temperature
+  if(tempHigh > 15000) g_stack.temp = tempHigh; // focusing on the warmest cell
+  else                 g_stack.temp = tempLow;  // or the coldest
+
+  // Decide baseState for the entire stack
+  if(alarmCnt > 0)
+  {
+    strcpy(g_stack.baseState, "Alarm!");
+  }
+  else if(chargeCnt == g_stack.batteryCount)
+  {
+    strcpy(g_stack.baseState, "Charge");
+    g_stack.soc = (int)(socAvg / g_stack.batteryCount);
+  }
+  else if(dischargeCnt == g_stack.batteryCount)
+  {
+    strcpy(g_stack.baseState, "Dischg");
+  }
+  else if(idleCnt == g_stack.batteryCount)
+  {
+    strcpy(g_stack.baseState, "Idle");
+  }
+  else
+  {
+    strcpy(g_stack.baseState, "Balance");
+  }
+
+  return true;
+}
+
+
+
+bool parse2(const char* pStr)
 {
   if(strstr(pStr, "Command completed successfully") == NULL)
   {
@@ -586,13 +723,6 @@ bool parse1(const char* pStr)
   }
 
   return true;
-}
-
-
-
-bool parse2(const char* pStr)
-{
- return true;
 }  
 
 /**
