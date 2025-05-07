@@ -444,6 +444,19 @@ void extractStr(const char* pStr, int pos, char* strOut, int strOutSize)
   }
 }
 
+
+bool parsePwrResponse(const char* pStrOutput)
+{
+ if  (FW_VERSION == 1 )
+  {
+    return parse1(pStrOutput);
+  }
+  else
+  {
+    return parse1(pStrOutput);
+  } 
+}
+
 /**
  * parsePwrResponse
  * 
@@ -453,7 +466,7 @@ void extractStr(const char* pStr, int pos, char* strOut, int strOutSize)
  * 
  * Further down, these will be used to calculate approximate power in W or kW.
  */
-bool parsePwrResponse(const char* pStr)
+bool parse1(const char* pStr)
 {
   if(strstr(pStr, "Command completed successfully") == NULL)
   {
@@ -574,6 +587,13 @@ bool parsePwrResponse(const char* pStr)
 
   return true;
 }
+
+
+
+bool parse2(const char* pStr)
+{
+ return true;
+}  
 
 /**
  * prepareJsonOutput

@@ -3,6 +3,11 @@
 
 // +++ START CONFIGURATION +++
 
+// Firmware Version
+// 1 old firmware
+// 2 new firmware
+const int FW_VERSION=1;
+
 // IMPORTANT: Specify your WiFi network credentials
 #define WIFI_SSID "*** your ssid ***"
 #define WIFI_PASS "*** your wifi pass ***"
