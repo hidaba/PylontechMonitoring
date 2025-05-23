@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 ## ToDo
 - temperature C or F
 
+## 2025-05-08
+- added modification for new or old firmware
+
 ## 2025-01-09
 - autodiscovery [@hidaba](https://github.com/hidaba)
 - added configuration for energy meter ready for home assistant [@hidaba](https://github.com/hidaba) [@KoenAclinic](https://github.com/KoenAclinic)
