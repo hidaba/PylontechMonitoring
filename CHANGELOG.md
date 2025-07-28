@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 - temperature C or F
 
 ## 2025-05-08
-- added modification for new or old firmware
+- added modification for new or old firmware [@hidaba](https://github.com/hidaba)
 
 ## 2025-01-09
 - autodiscovery [@hidaba](https://github.com/hidaba)

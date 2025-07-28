@@ -28,7 +28,7 @@ const char* www_username = "admin";
 const char* www_password = "password";
 
 // IMPORTANT: Uncomment this line if you want to enable MQTT
-#define ENABLE_MQTT
+// #define ENABLE_MQTT
 
 // Set your time offset in seconds (e.g., GMT +1 = 3600, GMT +2 = 7200, etc.)
 #define GMT 7200

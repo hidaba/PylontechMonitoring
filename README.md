@@ -4,7 +4,7 @@ Forked from irekzielinski/Pylontech-Battery-Monitoring
 This project allows you to control and monitor Pylontech US2000B, US2000C, US3000C, US5000, UP2500 batteries via console port over WiFi.
 It it's a great starting point to integrate battery with your home automation.
 
-**I ACCEPT NO RESPONSIBILTY FOR ANY DAMAGE CAUSED, PROCEED AT YOUR OWN RISK**
+**I take no responsibility for any damage that may occur. Use at your own risk.**
 
 # Features:
   * Low cost (around 20$ in total).
@@ -65,7 +65,7 @@ All configuration values are located in [`Pylontech.h`](./Pylontech.h). Below is
 
 | Parameter                        | Description                                                                                                                                                                                                         | Example                               |
 |----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------|
-| **`FW_VERSION`**                  | 1 for old Firmware, 2 for new firmware                                                                                                                                                                              | `#define const int FW_VERSION=1;`      |
+| **`FW_VERSION`**                 | 1 for old Firmware, 2 for new firmware                                                                                                                                                                              | `#define const int FW_VERSION=1;`      |
 | **`WIFI_SSID`**                  | The Wi-Fi network name (SSID) your ESP8266 should connect to.                                                                                                                                                      | `#define WIFI_SSID "MyWiFi"`          |
 | **`WIFI_PASS`**                  | The password for your Wi-Fi network.                                                                                                                                                                               | `#define WIFI_PASS "MyPassword"`      |
 | **`WIFI_HOSTNAME`**              | The hostname for your ESP8266. Useful for mDNS or other identification methods.                                                                                                                                    | `#define WIFI_HOSTNAME "MyBattery"`   |
