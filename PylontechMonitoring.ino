@@ -103,12 +103,16 @@ void setup() {
   server.on("/req", handleReq);
   server.on("/jsonOut", handleJsonOut);
   server.on("/reboot", [](){
-#ifdef AUTHENTICATION
-    if (!server.authenticate(www_username, www_password)) {
-      return server.requestAuthentication();
-    }
-#endif
-    ESP.restart();
+  #ifdef AUTHENTICATION
+      if (!server.authenticate(www_username, www_password)) {
+        return server.requestAuthentication();
+      }
+  #endif
+  server.send(200, "text/html",
+              "<html><body><h3>Reboot in progress...</h3>"
+              "<p>Please try again in 10-15 seconds.</p></body></html>");
+  delay(250);
+  ESP.restart();
   });
 
   server.begin(); 
@@ -357,6 +361,13 @@ void handleRoot() {
     ESP.getFreeHeap(), WiFi.RSSI(), WiFi.SSID().c_str());
 
   strncat(szTmp, "<BR><a href='/log'>Runtime log</a><HR>", sizeof(szTmp)-1);
+  strncat(szTmp,
+        "<p>"
+        "<a href='/reboot' onclick=\"return confirm('Reboot Device?');\" "
+        "style='display:inline-block;padding:8px 12px;background:#c33;color:#fff;"
+        "text-decoration:none;border-radius:6px;'>Reboot ESP</a>"
+        "</p><HR>",
+        sizeof(szTmp)-1);
   strncat(szTmp, "<form action='/req' method='get'>Command:<input type='text' name='code'/><input type='submit'> <a href='/req?code=pwr'>PWR</a> | <a href='/req?code=pwr%201'>Power 1</a> |  <a href='/req?code=pwr%202'>Power 2</a> | <a href='/req?code=pwr%203'>Power 3</a> | <a href='/req?code=pwr%204'>Power 4</a> | <a href='/req?code=help'>Help</a> | <a href='/req?code=log'>Event Log</a> | <a href='/req?code=time'>Time</a><br>", sizeof(szTmp)-1);
   strncat(szTmp, "<textarea rows='80' cols='180'>", sizeof(szTmp)-1);
   strncat(szTmp, g_szRecvBuff, sizeof(szTmp)-1);
