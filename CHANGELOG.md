@@ -1,8 +1,8 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
-## ToDo
-- temperature C or F
+## 2025-12-27
+- added Reboot button [@hidaba](https://github.com/hidaba)
 
 ## 2025-05-08
 - added modification for new or old firmware [@hidaba](https://github.com/hidaba)
